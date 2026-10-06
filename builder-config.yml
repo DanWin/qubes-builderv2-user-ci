@@ -1,0 +1,30 @@
+# Qubes Builder v2 Configuration for qubes-builderv2-user-ci
+# Host OS: Debian 13 (Trixie)
+# Note: 'use-qubes-repo' is explicitly omitted so prebuilt binaries are NOT used.
+
+include:
+  - example-configs/qubes-os-r4.2.yml
+
+# DO NOT USE PREBUILT QUBES BINARIES
+# use-qubes-repo:
+#   version: "4.2"
+#   testing: true
+
+debug: true
+verbose: true
+
+# Use Docker executor as mandated for container-isolated builds
+executor:
+  type: docker
+  options:
+    image: "qubes-builder-fedora:latest"
+
+# Signer configuration (optional/local)
+gpg-client: gpg
+
+stages:
+  - fetch
+  - prep
+  - build
+  - post
+  - verify

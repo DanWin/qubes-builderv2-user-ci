@@ -1,0 +1,38 @@
+name: Qubes Builder v2 CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-qubes:
+    name: Build Qubes OS (Debian 13 Trixie Host)
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+      options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Initial Dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends sudo ca-certificates git curl gpg docker.io
+
+      - name: Execute Qubes Builder v2 Pipeline
+        run: |
+          chmod +x ./build.sh
+          ./build.sh
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qubes-build-artifacts
+          path: artifacts/
+          retention-days: 14
