@@ -154,6 +154,15 @@ setup_builder() {
         gpg --import keys/qubes-developers-keys.asc 2>/dev/null || true
     fi
 
+    # Patch Container Dockerfiles to set empty password for user, preventing PAM account management errors with sudo
+    log_info "Patching Container Dockerfiles to resolve PAM authentication errors with sudo..."
+    if [ -f "dockerfiles/fedora.Dockerfile" ]; then
+        sed -i 's/RUN useradd -m user/RUN useradd -m user \&\& passwd -d user/g' dockerfiles/fedora.Dockerfile
+    fi
+    if [ -f "dockerfiles/fedora-mock.Dockerfile" ]; then
+        sed -i 's/RUN useradd -m user/RUN useradd -m user \&\& passwd -d user/g' dockerfiles/fedora-mock.Dockerfile
+    fi
+
     # Generate Docker builder container image
     log_info "Building qubes-builder-fedora Docker container image..."
     ./tools/generate-container-image.sh docker
