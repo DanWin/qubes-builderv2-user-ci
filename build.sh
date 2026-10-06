@@ -154,14 +154,19 @@ setup_builder() {
         gpg --import keys/qubes-developers-keys.asc 2>/dev/null || true
     fi
 
-    # Patch Container Dockerfiles to set empty password for user, preventing PAM account management errors with sudo
+    # Patch Container Dockerfiles to set valid user password and sudo rules, preventing PAM account management errors with sudo
     log_info "Patching Container Dockerfiles to resolve PAM authentication errors with sudo..."
-    if [ -f "dockerfiles/fedora.Dockerfile" ]; then
-        sed -i 's/RUN useradd -m user/RUN useradd -m user \&\& passwd -d user/g' dockerfiles/fedora.Dockerfile
-    fi
-    if [ -f "dockerfiles/fedora-mock.Dockerfile" ]; then
-        sed -i 's/RUN useradd -m user/RUN useradd -m user \&\& passwd -d user/g' dockerfiles/fedora-mock.Dockerfile
-    fi
+    python3 -c "
+import os
+for df in ['dockerfiles/fedora.Dockerfile', 'dockerfiles/fedora-mock.Dockerfile']:
+    if os.path.exists(df):
+        with open(df, 'r') as f:
+            content = f.read()
+        if 'chpasswd' not in content:
+            content = content.replace('RUN useradd -m user', 'RUN useradd -m user\nRUN echo \"user:password\" | chpasswd\nRUN echo \"user ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/user')
+            with open(df, 'w') as f:
+                f.write(content)
+"
 
     # Generate Docker builder container image
     log_info "Building qubes-builder-fedora Docker container image..."
