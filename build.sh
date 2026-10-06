@@ -42,7 +42,7 @@ log_info "Starting Qubes Builder v2 CI pipeline on host OS..."
 # ------------------------------------------------------------------------------
 # 1. Verify Host Operating System (Debian 13 / Trixie)
 # ------------------------------------------------------------------------------
-if [ -f /etc/os-release ]; property_os=$(cat /etc/os-release); then
+if [ -f /etc/os-release ]; then
     log_info "Detected OS release info:"
     grep -E '^(PRETTY_NAME|NAME|VERSION_ID|VERSION_CODENAME)=' /etc/os-release || true
     if grep -q "trixie" /etc/os-release || grep -q "13" /etc/os-release; then
@@ -53,7 +53,19 @@ if [ -f /etc/os-release ]; property_os=$(cat /etc/os-release); then
 fi
 
 # ------------------------------------------------------------------------------
-# 2. Install Host Dependencies for Debian
+# 2. Clone / Update Qubes Builder v2 Repository First
+# ------------------------------------------------------------------------------
+fetch_builder_repo() {
+    if [ ! -d "${BUILDER_DIR}" ]; then
+        log_info "Cloning qubes-builderv2 repository (v2 only)..."
+        git clone https://github.com/QubesOS/qubes-builderv2 "${BUILDER_DIR}"
+    else
+        log_info "qubes-builderv2 already exists at ${BUILDER_DIR}."
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 3. Install Host Dependencies for Debian 13
 # ------------------------------------------------------------------------------
 install_dependencies() {
     log_info "Installing Debian host build dependencies..."
@@ -66,6 +78,7 @@ install_dependencies() {
             ca-certificates \
             curl \
             docker.io \
+            docker-cli \
             git \
             gpg \
             lsb-release \
@@ -75,24 +88,33 @@ install_dependencies() {
             sudo \
             tree
             
-        # Dependencies from qubes-builderv2/dependencies-debian.txt if available
+        # Install all packages from dependencies-debian.txt
         if [ -f "${BUILDER_DIR}/dependencies-debian.txt" ]; then
-            log_info "Installing dependencies from dependencies-debian.txt..."
+            log_info "Installing packages from dependencies-debian.txt..."
             DEB_DEPS=$(cat "${BUILDER_DIR}/dependencies-debian.txt" | tr '\n' ' ')
             sudo apt-get install -y --no-install-recommends ${DEB_DEPS} || true
         fi
     else
         log_warn "apt-get not found; skipping automated package installation."
     fi
+
+    # Ensure docker executable is accessible
+    DOCKER_BIN=$(which docker || echo "/usr/bin/docker")
+    if [ -x "$DOCKER_BIN" ]; then
+        log_success "Docker binary verified at $DOCKER_BIN."
+    else
+        log_error "Docker binary not found! Installing docker.io and docker-cli..."
+        sudo apt-get install -y docker.io docker-cli
+    fi
 }
 
 # ------------------------------------------------------------------------------
-# 3. Check / Start Docker Service
+# 4. Check / Start Docker Service
 # ------------------------------------------------------------------------------
 setup_docker() {
     log_info "Verifying Docker runtime environment..."
     if ! docker info >/dev/null 2>&1; then
-        log_warn "Docker service is not accessible. Attempting to start dockerd..."
+        log_warn "Docker service is not accessible directly. Attempting to start dockerd..."
         if command -v systemctl >/dev/null 2>&1 && systemctl is-systemd-running >/dev/null 2>&1; then
             sudo systemctl start docker || true
         else
@@ -105,27 +127,24 @@ setup_docker() {
     if docker info >/dev/null 2>&1; then
         log_success "Docker daemon is running and accessible."
     else
-        log_error "Failed to connect to Docker daemon. Please ensure Docker is running."
-        exit 1
+        log_warn "Could not connect to Docker daemon directly. Testing sudo docker..."
+        if sudo docker info >/dev/null 2>&1; then
+            log_success "sudo docker is functional."
+        else
+            log_error "Failed to connect to Docker daemon."
+        fi
     fi
 }
 
 # ------------------------------------------------------------------------------
-# 4. Clone / Update Qubes Builder v2
+# 5. Build Container Image & Prepare Builder Setup
 # ------------------------------------------------------------------------------
 setup_builder() {
-    if [ ! -d "${BUILDER_DIR}" ]; then
-        log_info "Cloning qubes-builderv2 repository (v2 only)..."
-        git clone https://github.com/QubesOS/qubes-builderv2 "${BUILDER_DIR}"
-    else
-        log_info "qubes-builderv2 already exists at ${BUILDER_DIR}."
-    fi
-
     cd "${BUILDER_DIR}"
 
     # Install Python CLI dependencies inside builder dir if needed
     if [ -f "pyproject.toml" ] || [ -f "qubesbuilder-cli" ]; then
-        log_info "Installing qubesbuilder Python package in editable mode..."
+        log_info "Installing qubesbuilder Python package..."
         pip3 install --break-system-packages -e . 2>/dev/null || pip3 install -e . 2>/dev/null || true
     fi
 
@@ -141,7 +160,7 @@ setup_builder() {
 }
 
 # ------------------------------------------------------------------------------
-# 5. Configure Builder v2 (Without use-qubes-repo)
+# 6. Configure Builder v2 (Without use-qubes-repo)
 # ------------------------------------------------------------------------------
 setup_config() {
     log_info "Setting up builder configuration..."
@@ -159,7 +178,7 @@ setup_config() {
 }
 
 # ------------------------------------------------------------------------------
-# 6. Execute 3-Tiered Build Strategy
+# 7. Execute 3-Tiered Build Strategy
 # ------------------------------------------------------------------------------
 run_build_pipeline() {
     cd "${BUILDER_DIR}"
@@ -240,9 +259,10 @@ run_build_pipeline() {
 }
 
 # Main Execution Flow
+fetch_builder_repo
 install_dependencies
-setup_builder
 setup_docker
+setup_builder
 setup_config
 run_build_pipeline
 
