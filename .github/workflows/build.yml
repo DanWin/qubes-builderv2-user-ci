@@ -10,10 +10,7 @@ on:
 jobs:
   build-qubes:
     name: Build Qubes OS (Debian 13 Trixie Host)
-    runs-on: ubuntu-24.04
-    container:
-      image: debian:trixie
-      options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
