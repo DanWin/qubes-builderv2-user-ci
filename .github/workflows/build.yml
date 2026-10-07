@@ -14,10 +14,9 @@ jobs:
     container:
       image: debian:trixie
       options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
-    
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Initial Dependencies
         run: |
@@ -31,7 +30,7 @@ jobs:
 
       - name: Upload Build Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qubes-build-artifacts
           path: artifacts/
