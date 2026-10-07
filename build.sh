@@ -142,12 +142,6 @@ setup_docker() {
 setup_builder() {
     cd "${BUILDER_DIR}"
 
-    # Install Python CLI dependencies inside builder dir if needed
-    if [ -f "pyproject.toml" ] || [ -f "qubesbuilder-cli" ]; then
-        log_info "Installing qubesbuilder Python package..."
-        pip3 install --break-system-packages -e . 2>/dev/null || pip3 install -e . 2>/dev/null || true
-    fi
-
     # Import Qubes developer GPG keys
     if [ -f "keys/qubes-developers-keys.asc" ]; then
         log_info "Importing Qubes developer GPG keys..."
@@ -189,6 +183,7 @@ run_build_pipeline() {
 
     set +e
     log_info "Fetching ISO source components..."
+    docker run -it qubes-builder-fedora:latest id
     ./qb --builder-conf builder-ci.yml installer fetch
     ISO_FETCH_RES=$?
 
