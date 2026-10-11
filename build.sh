@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Qubes Builder v2 CI Script for Debian 13 (Trixie) Host
+# Qubes Builder v2 CI Script for Debian
 # Repository: qubes-builderv2-user-ci
 # Qubes Builder: V2 ONLY (https://github.com/QubesOS/qubes-builderv2)
 # Option 'use-qubes-repo': STRICTLY DISABLED (No prebuilt binaries used)
@@ -35,25 +35,12 @@ WORK_DIR="${SCRIPT_DIR}/work"
 BUILDER_DIR="${WORK_DIR}/qubes-builderv2"
 ARTIFACTS_DIR="${SCRIPT_DIR}/artifacts"
 
-mkdir -p "${WORK_DIR}" "${ARTIFACTS_DIR}"
+mkdir -p "${WORK_DIR}"
 
 log_info "Starting Qubes Builder v2 CI pipeline on host OS..."
 
 # ------------------------------------------------------------------------------
-# 1. Verify Host Operating System (Debian 13 / Trixie)
-# ------------------------------------------------------------------------------
-if [ -f /etc/os-release ]; then
-    log_info "Detected OS release info:"
-    grep -E '^(PRETTY_NAME|NAME|VERSION_ID|VERSION_CODENAME)=' /etc/os-release || true
-    if grep -q "trixie" /etc/os-release || grep -q "13" /etc/os-release; then
-        log_success "Host system verified as Debian 13 (Trixie)."
-    else
-        log_warn "Host OS is not explicitly Debian 13 (trixie), proceeding anyway."
-    fi
-fi
-
-# ------------------------------------------------------------------------------
-# 2. Clone / Update Qubes Builder v2 Repository First
+# 1. Clone / Update Qubes Builder v2 Repository First
 # ------------------------------------------------------------------------------
 fetch_builder_repo() {
     if [ ! -d "${BUILDER_DIR}" ]; then
@@ -62,82 +49,33 @@ fetch_builder_repo() {
     else
         log_info "qubes-builderv2 already exists at ${BUILDER_DIR}."
     fi
+    # hotfix: replace lorax-templates-qubes with lorax-templates in mock config
+    sed -i 's/lorax-templates-qubes/lorax-templates/' "${BUILDER_DIR}/qubesbuilder/plugins/installer/mock/fedora-x86_64.cfg"
 }
 
 # ------------------------------------------------------------------------------
-# 3. Install Host Dependencies for Debian 13
+# 2. Install Host Dependencies for Debian
 # ------------------------------------------------------------------------------
 install_dependencies() {
     log_info "Installing Debian host build dependencies..."
     if command -v apt-get >/dev/null 2>&1; then
         export DEBIAN_FRONTEND=noninteractive
         sudo apt-get update -qq || true
-        
-        # Fundamental build & container tools
-        sudo apt-get install -y --no-install-recommends \
-            ca-certificates \
-            curl \
-            docker.io \
-            docker-cli \
-            git \
-            gpg \
-            lsb-release \
-            python3 \
-            python3-pip \
-            python3-yaml \
-            sudo \
-            tree
             
         # Install all packages from dependencies-debian.txt
         if [ -f "${BUILDER_DIR}/dependencies-debian.txt" ]; then
             log_info "Installing packages from dependencies-debian.txt..."
             DEB_DEPS=$(cat "${BUILDER_DIR}/dependencies-debian.txt" | tr '\n' ' ')
+            # shellcheck disable=SC2086
             sudo apt-get install -y --no-install-recommends ${DEB_DEPS} || true
         fi
     else
         log_warn "apt-get not found; skipping automated package installation."
     fi
-
-    # Ensure docker executable is accessible
-    DOCKER_BIN=$(which docker || echo "/usr/bin/docker")
-    if [ -x "$DOCKER_BIN" ]; then
-        log_success "Docker binary verified at $DOCKER_BIN."
-    else
-        log_error "Docker binary not found! Installing docker.io and docker-cli..."
-        sudo apt-get install -y docker.io docker-cli
-    fi
 }
 
 # ------------------------------------------------------------------------------
-# 4. Check / Start Docker Service
-# ------------------------------------------------------------------------------
-setup_docker() {
-    log_info "Verifying Docker runtime environment..."
-    if ! docker info >/dev/null 2>&1; then
-        log_warn "Docker service is not accessible directly. Attempting to start dockerd..."
-        if command -v systemctl >/dev/null 2>&1 && systemctl is-systemd-running >/dev/null 2>&1; then
-            sudo systemctl start docker || true
-        else
-            log_info "Starting dockerd daemon in background..."
-            sudo dockerd >/tmp/dockerd.log 2>&1 &
-            sleep 5
-        fi
-    fi
-
-    if docker info >/dev/null 2>&1; then
-        log_success "Docker daemon is running and accessible."
-    else
-        log_warn "Could not connect to Docker daemon directly. Testing sudo docker..."
-        if sudo docker info >/dev/null 2>&1; then
-            log_success "sudo docker is functional."
-        else
-            log_error "Failed to connect to Docker daemon."
-        fi
-    fi
-}
-
-# ------------------------------------------------------------------------------
-# 5. Build Container Image & Prepare Builder Setup
+# 3. Build Container Image & Prepare Builder Setup
 # ------------------------------------------------------------------------------
 setup_builder() {
     cd "${BUILDER_DIR}"
@@ -154,7 +92,7 @@ setup_builder() {
 }
 
 # ------------------------------------------------------------------------------
-# 6. Configure Builder v2 (Without use-qubes-repo)
+# 4. Configure Builder v2 (Without use-qubes-repo)
 # ------------------------------------------------------------------------------
 setup_config() {
     log_info "Setting up builder configuration..."
@@ -172,7 +110,7 @@ setup_config() {
 }
 
 # ------------------------------------------------------------------------------
-# 7. Execute 3-Tiered Build Strategy
+# 5. Execute 3-Tiered Build Strategy
 # ------------------------------------------------------------------------------
 run_build_pipeline() {
     cd "${BUILDER_DIR}"
@@ -182,72 +120,18 @@ run_build_pipeline() {
     log_info "========================================================"
 
     set +e
-    log_info "Fetching ISO source components..."
-    docker run -it qubes-builder-fedora:latest id
-    ./qb --builder-conf builder-ci.yml installer fetch
-    ISO_FETCH_RES=$?
-
-    if [ ${ISO_FETCH_RES} -eq 0 ]; then
-        log_info "Initializing ISO cache..."
-        ./qb --builder-conf builder-ci.yml installer init-cache
-        log_info "Prepping ISO build..."
-        ./qb --builder-conf builder-ci.yml installer prep
-        log_info "Building Qubes ISO..."
-        ./qb --builder-conf builder-ci.yml installer build
-        ISO_BUILD_RES=$?
-
-        if [ ${ISO_BUILD_RES} -eq 0 ]; then
-            log_success "Tier 1 SUCCESS: Qubes ISO built successfully!"
-            if [ -d "artifacts/installer" ]; then
-                cp -r artifacts/installer/* "${ARTIFACTS_DIR}/" || true
-            fi
-            set -e
-            return 0
-        fi
-    fi
-    set -e
-
-    log_warn "Tier 1 (ISO Build) failed or incomplete due to upstream dependencies / missing prebuilts."
-    
-    log_info "========================================================"
-    log_info " Tier 2: Fallback - Attempting Kicksecure Template Build"
-    log_info "========================================================"
-
-    set +e
-    log_info "Fetching Kicksecure template sources..."
-    ./qb --builder-conf builder-ci.yml -t kicksecure-18 template fetch
-    TPL_FETCH_RES=$?
-
-    if [ ${TPL_FETCH_RES} -eq 0 ]; then
-        log_info "Prepping Kicksecure template..."
-        ./qb --builder-conf builder-ci.yml -t kicksecure-18 template prep
-        log_info "Building Kicksecure template..."
-        ./qb --builder-conf builder-ci.yml -t kicksecure-18 template build
-        TPL_BUILD_RES=$?
-
-        if [ ${TPL_BUILD_RES} -eq 0 ]; then
-            log_success "Tier 2 SUCCESS: Qubes Kicksecure Template built successfully!"
-            if [ -d "artifacts/templates" ]; then
-                cp -r artifacts/templates/* "${ARTIFACTS_DIR}/" || true
-            fi
-            set -e
-            return 0
-        fi
-    fi
-    set -e
-
-    log_warn "Tier 2 (Kicksecure Template Build) failed or incomplete."
-
-    log_info "========================================================"
-    log_info " Tier 3: Fallback - Fetching All Qubes Source Code"
-    log_info "========================================================"
-
     log_info "Fetching all Qubes OS source code repositories..."
     ./qb --builder-conf builder-ci.yml package fetch || true
 
-    log_success "Tier 3 SUCCESS: Qubes source code fetched into artifacts/sources."
-    if [ -d "artifacts/sources" ]; then
-        cp -r artifacts/sources "${ARTIFACTS_DIR}/" || true
+    log_info "Prepare all Qubes OS source code repositories..."
+    ./qb --builder-conf builder-ci.yml package prep || true
+
+    log_info "Build all Qubes OS source code repositories..."
+    ./qb --builder-conf builder-ci.yml package build || true
+
+    log_success "Tier 1 SUCCESS: Qubes source code fetched into artifacts/sources."
+    if [ -d "artifacts/" ]; then
+        mv artifacts "${ARTIFACTS_DIR}" || true
     fi
 
     log_info "Build pipeline completed."
@@ -256,7 +140,6 @@ run_build_pipeline() {
 # Main Execution Flow
 fetch_builder_repo
 install_dependencies
-setup_docker
 setup_builder
 setup_config
 run_build_pipeline

@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-qubes:
-    name: Build Qubes OS (Debian 13 Trixie Host)
+    name: Build Qubes OS
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout Repository
@@ -18,7 +18,7 @@ jobs:
       - name: Install Initial Dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends sudo ca-certificates git curl gpg docker.io
+          sudo apt-get install -y --no-install-recommends ca-certificates docker.io docker-cli git gpg
 
       - name: Execute Qubes Builder v2 Pipeline
         run: |
