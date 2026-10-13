@@ -61,7 +61,7 @@ install_dependencies() {
     if command -v apt-get >/dev/null 2>&1; then
         export DEBIAN_FRONTEND=noninteractive
         sudo apt-get update -qq || true
-            
+
         # Install all packages from dependencies-debian.txt
         if [ -f "${BUILDER_DIR}/dependencies-debian.txt" ]; then
             log_info "Installing packages from dependencies-debian.txt..."
@@ -96,10 +96,10 @@ setup_builder() {
 # ------------------------------------------------------------------------------
 setup_config() {
     log_info "Setting up builder configuration..."
-    
+
     # Copy custom builder config or create builder-ci.yml
     cp "${SCRIPT_DIR}/builder-config.yml" "${BUILDER_DIR}/builder-ci.yml"
-    
+
     # Explicitly verify 'use-qubes-repo' is NOT active in builder-ci.yml
     if grep -E '^\s*use-qubes-repo:' "${BUILDER_DIR}/builder-ci.yml"; then
         log_error "CRITICAL: 'use-qubes-repo' option detected in config! This option must NOT be used."
@@ -126,8 +126,9 @@ run_build_pipeline() {
     log_info "Prepare all Qubes OS source code repositories..."
     ./qb --builder-conf builder-ci.yml package prep || true
 
-    log_info "Build all Qubes OS source code repositories..."
-    ./qb --builder-conf builder-ci.yml package build || true
+    # building hits github job max execution timeout
+    #log_info "Build all Qubes OS source code repositories..."
+    #./qb --builder-conf builder-ci.yml package build || true
 
     log_success "Tier 1 SUCCESS: Qubes source code fetched into artifacts/sources."
     if [ -d "artifacts/" ]; then
