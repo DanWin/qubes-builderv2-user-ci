@@ -35,7 +35,7 @@ WORK_DIR="${SCRIPT_DIR}/work"
 BUILDER_DIR="${WORK_DIR}/qubes-builderv2"
 ARTIFACTS_DIR="${SCRIPT_DIR}/artifacts"
 
-mkdir -p "${WORK_DIR}"
+mkdir -p "${WORK_DIR}" "${ARTIFACTS_DIR}"
 
 log_info "Starting Qubes Builder v2 CI pipeline on host OS..."
 
@@ -119,7 +119,6 @@ run_build_pipeline() {
     log_info " Tier 1: Attempting Qubes ISO Build (Source Build)"
     log_info "========================================================"
 
-    set +e
     log_info "Fetching all Qubes OS source code repositories..."
     ./qb --builder-conf builder-ci.yml package fetch || true
 
@@ -132,7 +131,7 @@ run_build_pipeline() {
 
     log_success "Tier 1 SUCCESS: Qubes source code fetched into artifacts/sources."
     if [ -d "artifacts/" ]; then
-        mv artifacts "${ARTIFACTS_DIR}" || true
+        tar czf "${ARTIFACTS_DIR}/artifacts.tar.gz" artifacts || true
     fi
 
     log_info "Build pipeline completed."
